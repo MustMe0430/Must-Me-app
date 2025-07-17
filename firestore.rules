@@ -1,0 +1,232 @@
+// Firestore Security Rules for MustMe Development Environment
+// These rules are designed for development and testing - more restrictive rules should be used in production
+
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // Helper function to check if user is authenticated
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    
+    // Helper function to check if user owns the data
+    function isOwner(userId) {
+      return request.auth != null && request.auth.uid == userId;
+    }
+    
+    // Helper function to check if user can modify their own data
+    function isOwnerAndSignedIn(resource) {
+      return isSignedIn() && request.auth.uid == resource.data.userId;
+    }
+    
+    // Helper function to validate required fields for reviews
+    function isValidReview() {
+      return request.resource.data.keys().hasAll(['userId', 'productId', 'rating', 'title', 'content', 'createdAt']) &&
+             request.resource.data.rating >= 1 && request.resource.data.rating <= 5;
+    }
+    
+    // User profiles - users can read any profile but only modify their own
+    match /users/{userId} {
+      // Allow read access to any authenticated user (for displaying user info on reviews)
+      allow read: if isSignedIn();
+      
+      // Allow users to create and update their own profile
+      allow create: if isSignedIn() && request.auth.uid == userId;
+      allow update: if isOwner(userId);
+      
+      // Allow users to delete their own profile
+      allow delete: if isOwner(userId);
+      
+      // User preferences and private data subcollection
+      match /private/{document=**} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // User's bookmarks subcollection
+      match /bookmarks/{bookmarkId} {
+        allow read, write: if isOwner(userId);
+      }
+      
+      // User's follower/following lists
+      match /followers/{followerId} {
+        allow read: if isSignedIn();
+        allow write: if isSignedIn();
+      }
+      
+      match /following/{followingId} {
+        allow read: if isSignedIn();
+        allow write: if isOwner(userId);
+      }
+    }
+    
+    // Products - public read access, admin write access (permissive for development)
+    match /products/{productId} {
+      // Allow anyone to read product information
+      allow read: if true;
+      
+      // For development: allow authenticated users to create/update products
+      // In production, this should be restricted to admin users only
+      allow create, update: if isSignedIn();
+      
+      // Allow deletion for development (should be admin-only in production)
+      allow delete: if isSignedIn();
+      
+      // Product reviews subcollection
+      match /reviews/{reviewId} {
+        // Anyone can read reviews (public data)
+        allow read: if true;
+        
+        // Only authenticated users can create reviews
+        allow create: if isSignedIn() && 
+                         isValidReview() && 
+                         request.resource.data.userId == request.auth.uid;
+        
+        // Users can only update their own reviews
+        allow update: if isSignedIn() && 
+                         resource.data.userId == request.auth.uid &&
+                         isValidReview();
+        
+        // Users can only delete their own reviews
+        allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+        
+        // Review interactions (likes, helpful votes)
+        match /interactions/{interactionId} {
+          allow read: if true;
+          allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+          allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+        }
+        
+        // Review comments
+        match /comments/{commentId} {
+          allow read: if true;
+          allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+          allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+        }
+      }
+      
+      // Product images and media
+      match /media/{mediaId} {
+        allow read: if true;
+        allow write: if isSignedIn();
+      }
+    }
+    
+    // Main reviews collection (top-level reviews for easier querying)
+    match /reviews/{reviewId} {
+      // Public read access to all reviews
+      allow read: if true;
+      
+      // Users can create reviews if authenticated and own the review
+      allow create: if isSignedIn() && 
+                       isValidReview() && 
+                       request.resource.data.userId == request.auth.uid;
+      
+      // Users can update their own reviews
+      allow update: if isOwnerAndSignedIn(resource) && isValidReview();
+      
+      // Users can delete their own reviews
+      allow delete: if isOwnerAndSignedIn(resource);
+      
+      // Review interactions (likes, helpful votes, bookmarks)
+      match /interactions/{userId} {
+        // Public read access to see interaction counts
+        allow read: if true;
+        
+        // Users can create/update/delete their own interactions
+        allow write: if isOwner(userId);
+      }
+      
+      // Review comments
+      match /comments/{commentId} {
+        allow read: if true;
+        allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+        allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+      }
+    }
+    
+    // Categories - public read, authenticated write (for development)
+    match /categories/{categoryId} {
+      allow read: if true;
+      allow write: if isSignedIn(); // Should be admin-only in production
+    }
+    
+    // Brands - public read, authenticated write (for development)
+    match /brands/{brandId} {
+      allow read: if true;
+      allow write: if isSignedIn(); // Should be admin-only in production
+    }
+    
+    // User interactions and social features
+    match /interactions/{interactionId} {
+      // Read access for authenticated users to show social proof
+      allow read: if isSignedIn();
+      
+      // Users can create/update/delete their own interactions
+      allow create: if isSignedIn() && request.resource.data.userId == request.auth.uid;
+      allow update, delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+    
+    // User notifications
+    match /notifications/{notificationId} {
+      // Users can read their own notifications
+      allow read: if isSignedIn() && resource.data.userId == request.auth.uid;
+      
+      // System can create notifications, users can update (mark as read)
+      allow create: if isSignedIn();
+      allow update: if isSignedIn() && resource.data.userId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.userId == request.auth.uid;
+    }
+    
+    // Search and recommendations data
+    match /search/{document=**} {
+      allow read: if true; // Public search data
+      allow write: if isSignedIn(); // For development - should be restricted in production
+    }
+    
+    // Analytics and usage data (for development)
+    match /analytics/{document=**} {
+      allow read, write: if isSignedIn(); // Very permissive for development
+    }
+    
+    // Lists and collections created by users
+    match /lists/{listId} {
+      // Public read access to published lists
+      allow read: if true;
+      
+      // Users can create lists
+      allow create: if isSignedIn() && request.resource.data.createdBy == request.auth.uid;
+      
+      // Users can update/delete their own lists
+      allow update, delete: if isSignedIn() && resource.data.createdBy == request.auth.uid;
+      
+      // List items
+      match /items/{itemId} {
+        allow read: if true;
+        allow write: if isSignedIn() && 
+                        get(/databases/$(database)/documents/lists/$(listId)).data.createdBy == request.auth.uid;
+      }
+    }
+    
+    // Reports and moderation (for development - should be admin-only in production)
+    match /reports/{reportId} {
+      allow read, write: if isSignedIn();
+    }
+    
+    // Development and testing data collections
+    match /dev/{document=**} {
+      allow read, write: if isSignedIn();
+    }
+    
+    match /test/{document=**} {
+      allow read, write: if true; // Completely open for testing
+    }
+    
+    // Fallback rule for any other collections (restrictive)
+    match /{document=**} {
+      // Deny all access to undefined paths
+      allow read, write: if false;
+    }
+  }
+}

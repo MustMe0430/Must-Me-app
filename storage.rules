@@ -1,0 +1,182 @@
+rules_version = '2';
+
+// Cloud Storage Security Rules for MustMe Application
+service firebase.storage {
+  match /b/{bucket}/o {
+    
+    // Helper functions for validation
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+    
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    
+    function isValidImageType() {
+      return resource.contentType.matches('image/(jpeg|jpg|png|webp|gif)');
+    }
+    
+    function isValidUploadImageType() {
+      return request.resource.contentType.matches('image/(jpeg|jpg|png|webp|gif)');
+    }
+    
+    function isValidImageSize() {
+      return request.resource.size < 10 * 1024 * 1024; // 10MB limit
+    }
+    
+    function isValidProfileImageSize() {
+      return request.resource.size < 5 * 1024 * 1024; // 5MB limit for profile images
+    }
+    
+    function isValidThumbnailSize() {
+      return request.resource.size < 2 * 1024 * 1024; // 2MB limit for thumbnails
+    }
+
+    // User profile images
+    match /users/{userId}/profile/{imageId} {
+      // Allow read access to all authenticated users
+      allow read: if isAuthenticated();
+      
+      // Allow upload/update/delete only to the owner
+      allow write: if isAuthenticated() 
+        && isOwner(userId) 
+        && isValidUploadImageType() 
+        && isValidProfileImageSize();
+    }
+    
+    // User uploaded content (general folder for misc user content)
+    match /users/{userId}/uploads/{imageId} {
+      // Allow read access to all authenticated users
+      allow read: if isAuthenticated();
+      
+      // Allow upload/update/delete only to the owner
+      allow write: if isAuthenticated() 
+        && isOwner(userId) 
+        && isValidUploadImageType() 
+        && isValidImageSize();
+    }
+    
+    // User review images - Updated path structure
+    match /reviews/{userId}/images/{imageId} {
+      // Allow public read access for review images
+      allow read: if true;
+      
+      // Allow upload/update/delete only to the owner
+      allow write: if isAuthenticated() 
+        && isOwner(userId) 
+        && isValidUploadImageType() 
+        && isValidImageSize();
+    }
+    
+    // User review images (legacy structure for backward compatibility)
+    match /users/{userId}/reviews/{reviewId}/{imageId} {
+      // Allow public read access for review images
+      allow read: if true;
+      
+      // Allow upload/update/delete only to the owner
+      allow write: if isAuthenticated() 
+        && isOwner(userId) 
+        && isValidUploadImageType() 
+        && isValidImageSize();
+    }
+    
+    // Product images (uploaded by business owners/admins)
+    match /products/{productId}/{imageId} {
+      // Allow public read access for product images
+      allow read: if true;
+      
+      // Allow write for authenticated users (business owners can upload product images)
+      // In production, you might want to add additional role-based checks here
+      allow write: if isAuthenticated() 
+        && isValidUploadImageType() 
+        && isValidImageSize();
+    }
+    
+    // Product thumbnails (auto-generated or manually uploaded)
+    match /products/{productId}/thumbnails/{imageId} {
+      // Allow public read access
+      allow read: if true;
+      
+      // Allow write for authenticated users with smaller size limit
+      allow write: if isAuthenticated() 
+        && isValidUploadImageType() 
+        && isValidThumbnailSize();
+    }
+    
+    // Business/venue images
+    match /businesses/{businessId}/images/{imageId} {
+      // Allow public read access for business images
+      allow read: if true;
+      
+      // Allow write for authenticated users (business owners)
+      // In production, add business ownership validation
+      allow write: if isAuthenticated() 
+        && isValidUploadImageType() 
+        && isValidImageSize();
+    }
+    
+    // Review images (alternative structure for public reviews)
+    match /reviews/{reviewId}/images/{imageId} {
+      // Allow public read access for review images
+      allow read: if true;
+      
+      // Allow write only for authenticated users
+      // Additional validation can be added to check if user owns the review
+      allow write: if isAuthenticated() 
+        && isValidUploadImageType() 
+        && isValidImageSize();
+    }
+    
+    // Temporary uploads folder (for processing before moving to final location)
+    match /temp/{userId}/{uploadId} {
+      // Allow read only to the owner
+      allow read: if isAuthenticated() && isOwner(userId);
+      
+      // Allow write only to the owner with time-based cleanup
+      allow write: if isAuthenticated() 
+        && isOwner(userId) 
+        && isValidUploadImageType() 
+        && isValidImageSize();
+    }
+    
+    // Cache/processed images (for image transformations, thumbnails, etc.)
+    match /cache/{path=**} {
+      // Allow public read access for cached/processed images
+      allow read: if true;
+      
+      // Only allow server-side writes (Cloud Functions)
+      // In development, you might want to allow writes for testing
+      allow write: if false; // Change to `if isAuthenticated()` for development testing
+    }
+    
+    // System/admin uploaded content
+    match /system/{path=**} {
+      // Allow public read access for system images (logos, banners, etc.)
+      allow read: if true;
+      
+      // Only allow admin writes (implement admin role check in production)
+      allow write: if isAuthenticated(); // In production: && hasAdminRole()
+    }
+    
+    // Development/testing folder (remove in production)
+    match /dev/{path=**} {
+      // Allow full access for development
+      allow read, write: if isAuthenticated();
+    }
+    
+    // Public assets (logos, default images, etc.)
+    match /public/{path=**} {
+      // Allow public read access
+      allow read: if true;
+      
+      // Only allow admin uploads
+      allow write: if isAuthenticated(); // In production: add admin role check
+    }
+    
+    // Fallback rule - deny access to any other paths
+    match /{allPaths=**} {
+      allow read, write: if false;
+    }
+  }
+}
