@@ -517,33 +517,38 @@ export default function DebugPage() {
               <Database className="w-5 h-5" />
               Firebase Configuration
               {debugResults.firebaseConfig && getStatusIcon(debugResults.firebaseConfig.status)}
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
+                 <CardContent>
             {debugResults.firebaseConfig ? (
               <div className="space-y-3">
                 <div className="flex justify-between items-center">
                   <span className="text-sm font-medium">Status:</span>
                   {getStatusBadge(debugResults.firebaseConfig.status)}
                 </div>
-                <p className="text-sm text-gray-600">{debugResults.firebaseConfig.message}</p>
+                <p className="text-sm text-gray-600">
+                  {debugResults.firebaseConfig.message}
+                </p>
                 {debugResults.firebaseConfig.details && (
                   <div className="bg-gray-50 p-3 rounded-md">
                     <div className="grid grid-cols-1 gap-1 text-sm">
-                      {Object.entries(debugResults.firebaseConfig.details).map(([key, value]) => (
-                        <div key={key} className="flex justify-between">
-                          <span className="font-medium">{key}:</span>
-                          <span className={value.toString().includes('✓') ? 'text-green-600' : 'text-red-600'}>
-                            {value.toString()}
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div className="text-center py-4 text-gray-500">
+...
+<p className="text-sm text-gray-600">
+  {debugResults.firebaseConfig.message}
+</p>
+{debugResults.firebaseConfig.details && (
+  <div className="bg-gray-50 p-3 rounded-md">
+    <div className="grid grid-cols-1 gap-1 text-sm">
+      {Object.entries(debugResults.firebaseConfig.details).map(([key, value]) => (
+        <div key={key} className="flex justify-between">
+          <span className="font-medium">{key}:</span>
+          <span className={String(value).includes('✓') ? 'text-green-600' : 'text-red-600'}>
+            {String(value)}
+          </span>
+        </div>
+      ))}
+    </div>
+  </div>
+)}
+...
                 <Database className="w-8 h-8 mx-auto mb-2 opacity-50" />
                 <p>Run tests to check configuration</p>
               </div>
